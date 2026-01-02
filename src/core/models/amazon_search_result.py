@@ -1,5 +1,6 @@
 from typing import Any
 
+from loguru import logger
 from pydantic import AnyHttpUrl, BaseModel, Field, HttpUrl, field_validator
 
 
@@ -97,8 +98,10 @@ class AmazonSearchResult(BaseModel):
 
     def top_n_products_only(self, n: int = 10) -> list[SearchProduct]:
         if n > self.total_results:
-            raise ValueError(
-                f"Requested top {n} products, but only {self.total_results} available."
+            logger.warning(
+                f"Requested the top {n} products, but only {self.total_results} are available. "
+                f"Returning {self.total_results} products instead."
             )
+            n = self.total_results
 
         return self.results[:n]
