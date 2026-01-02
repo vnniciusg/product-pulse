@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import AnyHttpUrl, BaseModel, Field, HttpUrl
+from pydantic import AnyHttpUrl, BaseModel, Field, HttpUrl, field_validator
 
 
 class PriceInfo(BaseModel):
@@ -43,6 +43,13 @@ class SearchProduct(BaseModel):
         return (
             self.original_price is not None and self.price < self.original_price.price
         )
+
+    @field_validator("stars")
+    @classmethod
+    def validate_stars(cls, v: float) -> float:
+        if not 0 <= v <= 5:
+            raise ValueError("Stars must be between 0 and 5")
+        return v
 
 
 class AmazonSearchResult(BaseModel):
@@ -87,3 +94,11 @@ class AmazonSearchResult(BaseModel):
 
     def sort_by_rating(self, ascending: bool = False) -> list[SearchProduct]:
         return sorted(self.results, key=lambda x: x.stars, reverse=not ascending)
+
+    def top_n_products_only(self, n: int = 10) -> list[SearchProduct]:
+        if n > self.total_results:
+            raise ValueError(
+                f"Requested top {n} products, but only {self.total_results} available."
+            )
+
+        return self.results[:n]
