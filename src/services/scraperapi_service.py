@@ -76,9 +76,10 @@ class ScraperAPIService:
                     "query": query,
                 },
             )
-            response.raise_for_status()
+            data = response.json()
+            data["results"] = [item for item in data["results"] if "asin" in item]
 
-            return AmazonSearchResult(**response.json())
+            return AmazonSearchResult(**data)
 
     async def get_products_details(
         self, search_results: list[SearchProduct]
@@ -121,7 +122,7 @@ class ScraperAPIService:
                 return None
 
             except Exception as e:
-                logger.exception(f"Unexpected error for ASIN {asin}: {str(e)}")
+                logger.error(f"Unexpected error for ASIN {asin}: {str(e)}")
                 return None
 
     async def close(self):
