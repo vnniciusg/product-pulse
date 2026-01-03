@@ -19,7 +19,7 @@ agent = create_agent(
     middleware=[
         ToolCallLimitMiddleware(tool_name="search_on_amazon", run_limit=4),
         SummarizationMiddleware(
-            model="google_genai:gemini-3-flash-preview", trigger={"tokens": 2048}
+            model="google_genai:gemini-3-flash-preview", trigger=("tokens", 2048)
         ),
     ],
 )
