@@ -20,7 +20,7 @@ class SearchProduct(BaseModel):
     is_best_seller: bool
     is_amazon_choice: bool
     is_limited_deal: bool
-    stars: float
+    stars: float | None = Field(default=None)
     url: AnyHttpUrl
     price_string: str | None = Field(default=None)
     price_symbol: str | None = Field(default=None)
