@@ -2,6 +2,13 @@ import asyncio
 
 from httpx import AsyncClient, HTTPStatusError, Limits, RequestError
 from loguru import logger
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from ..core.config import app_config
 from ..core.models.amazon_product_details import AmazonProductDetails
@@ -55,6 +62,9 @@ class _HttpxClient:
         return self._client is None or self._client.is_closed
 
 
+class _RateLimitError(Exception): ...
+
+
 class ScraperAPIService:
     __slots__ = ("_http_client", "_semaphore")
 
@@ -67,22 +77,39 @@ class ScraperAPIService:
         )
         self._semaphore = asyncio.Semaphore(max_concurrent_requests)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception_type(_RateLimitError),
+        before_sleep=before_sleep_log(logger, "WARNING"),
+    )
     async def search_product_on_amazon(
         self, *, query: str, region: str | None = None
     ) -> AmazonSearchResult:
         async with self._http_client as client:
-            response = await client.get(
-                "/search/v1",
-                params={
-                    "api_key": app_config.SCRAPER.KEY.get_secret_value(),
-                    "query": query,
-                    "country_code": region or app_config.SCRAPER.COUNTRY_CODE,
-                },
-            )
-            data = response.json()
-            data["results"] = [item for item in data["results"] if "asin" in item]
+            try:
+                response = await client.get(
+                    "/search/v1",
+                    params={
+                        "api_key": app_config.SCRAPER.KEY.get_secret_value(),
+                        "query": query,
+                        "country_code": region or app_config.SCRAPER.COUNTRY_CODE,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                data["results"] = [item for item in data["results"] if "asin" in item]
 
-            return AmazonSearchResult(**data)
+                return AmazonSearchResult(**data)
+
+            except HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    logger.warning(
+                        f"Rate limit hit for search query '{query}', retrying..."
+                    )
+                    raise _RateLimitError(f"Rate limit exceeded: {e.response.text}")
+
+                raise
 
     async def get_products_details(
         self, search_results: list[SearchProduct]
@@ -99,6 +126,12 @@ class ScraperAPIService:
 
             return [result for result in results if result is not None]
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception_type((_RateLimitError, RequestError)),
+        before_sleep=before_sleep_log(logger, "WARNING"),
+    )
     async def _get_product_details(
         self, *, asin: str, client: AsyncClient
     ) -> AmazonProductDetails | None:
@@ -115,18 +148,20 @@ class ScraperAPIService:
                 return AmazonProductDetails(**response.json())
 
             except HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    logger.warning(f"Rate limit hit for ASIN {asin}, retrying...")
+                    raise _RateLimitError(
+                        f"Rate limit exceeded for ASIN {asin}: {e.response.text}"
+                    )
+
                 logger.error(
                     f"HTTP error for ASIN {asin}: {e.response.status_code} - {e.response.text}"
                 )
-                return None
+                raise
 
             except RequestError as e:
-                logger.error(f"Request error for ASIN {asin}: {str(e)}")
-                return None
-
-            except Exception as e:
-                logger.error(f"Unexpected error for ASIN {asin}: {str(e)}")
-                return None
+                logger.warning(f"Request error for ASIN {asin}, retrying: {str(e)}")
+                raise
 
     async def close(self):
         await self._http_client.close()
