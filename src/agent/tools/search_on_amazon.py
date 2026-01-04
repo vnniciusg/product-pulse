@@ -37,9 +37,11 @@ async def search_on_amazon(
         On success:
             {
                 "status": "success",
-                "products": list[dict]
+                "last_search": list[dict],
+                "all_searches": list[list[dict]]
             }
-            - "products" contains chatbot-friendly product representations.
+            - "last_search" contains chatbot-friendly product representations.
+            - "all_searches" contains all preview searchs
 
         On error:
             {
@@ -49,19 +51,21 @@ async def search_on_amazon(
             - "error" contains a generic failure message.
     """
     try:
-        async with ScraperAPIService(max_concurrent_requests=5) as scraper_api:
+        async with ScraperAPIService(max_concurrent_requests=3) as scraper_api:
             products = await scraper_api.search_product_on_amazon(
                 query=query, region=runtime.state.get("region")
             )
             products = products.top_n_products_only(n=top_n_products)
             products = await scraper_api.get_products_details(search_results=products)
+            if not products:
+                return {"status": "success", "message": "Not found any product"}
+
             products = [product.to_chatbot_view() for product in products]
 
         products_data = [product.model_dump() for product in products]
 
         return {
             "status": "success",
-            "products": products_data,
             "last_search": products_data,
             "all_searches": products_data,
         }
