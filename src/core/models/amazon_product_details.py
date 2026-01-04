@@ -21,7 +21,7 @@ class ChatbotReviewSnippet(BaseModel):
 
 class ChatbotProductView(BaseModel):
     name: str
-    brand: str
+    brand: str | None = Field(default=None)
     price: str | None = Field(default=None)
     availability: str | None = Field(default=None)
     average_rating: float | None = Field(default=None)
@@ -33,7 +33,7 @@ class ChatbotProductView(BaseModel):
 
 class AmazonProductDetails(BaseModel):
     name: str
-    brand: str
+    brand: str | None = Field(default=None)
     pricing: str | None = Field(default=None)
     availability_status: str | None = Field(default=None)
     average_rating: float | None = Field(default=None)
