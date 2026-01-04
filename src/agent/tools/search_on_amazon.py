@@ -4,6 +4,7 @@ from langchain.tools import ToolRuntime, tool
 from loguru import logger
 
 from ...services.scraperapi_service import ScraperAPIService
+from .query_refiner import QueryRefiner
 
 
 @tool
@@ -51,9 +52,30 @@ async def search_on_amazon(
             - "error" contains a generic failure message.
     """
     try:
+        # Validate and refine the query for single-topic, Amazon-appropriate search
+        validation_result = QueryRefiner.validate_query(query)
+        
+        if not validation_result["is_valid"]:
+            logger.warning(
+                f"Invalid search query: '{query}'. Reason: {validation_result['reason']}"
+            )
+            return {
+                "status": "error",
+                "error": f"Invalid search query: {validation_result['reason']}",
+            }
+        
+        refined_query = validation_result["refined_query"]
+        
+        # Log if query was refined
+        if refined_query != query:
+            logger.info(
+                f"Refined search query from '{query}' to '{refined_query}' "
+                f"for better Amazon search results"
+            )
+        
         async with ScraperAPIService(max_concurrent_requests=3) as scraper_api:
             products = await scraper_api.search_product_on_amazon(
-                query=query, region=runtime.state.get("region")
+                query=refined_query, region=runtime.state.get("region")
             )
             products = products.top_n_products_only(n=top_n_products)
             products = await scraper_api.get_products_details(search_results=products)
