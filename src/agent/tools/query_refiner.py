@@ -76,6 +76,51 @@ class QueryRefiner:
         ",",
     ]
 
+    # Words that indicate accessories, filters, or specs when used with "with"
+    WITH_SEPARATOR_KEYWORDS = [
+        "case",
+        "cover",
+        "charger",
+        "cable",
+        "adapter",
+        "memory",
+        "storage",
+        "ram",
+        "gb",
+        "tb",
+        "shipping",
+        "delivery",
+        "prime",
+        "free",
+        "discount",
+        "rgb",
+    ]
+
+    # Pre-compiled regex patterns for better performance
+    _compiled_filter_patterns = None
+    _with_keywords_pattern = None
+
+    @classmethod
+    def _get_filter_patterns(cls):
+        """Lazily compile and cache filter keyword patterns."""
+        if cls._compiled_filter_patterns is None:
+            cls._compiled_filter_patterns = [
+                re.compile(rf"\s+{re.escape(keyword)}\b.*", re.IGNORECASE)
+                for keyword in cls.FILTER_KEYWORDS
+            ]
+        return cls._compiled_filter_patterns
+
+    @classmethod
+    def _get_with_keywords_pattern(cls):
+        """Lazily compile and cache pattern for WITH separator keywords."""
+        if cls._with_keywords_pattern is None:
+            # Create pattern with word boundaries for each keyword
+            keywords_pattern = "|".join(
+                rf"\b{re.escape(word)}\b" for word in cls.WITH_SEPARATOR_KEYWORDS
+            )
+            cls._with_keywords_pattern = re.compile(keywords_pattern, re.IGNORECASE)
+        return cls._with_keywords_pattern
+
     @staticmethod
     def refine_query(query: str) -> str:
         """
@@ -109,13 +154,12 @@ class QueryRefiner:
         query = query.strip()
         query_lower = query.lower()
 
-        # Remove prefix filters (best rated, budget, etc.)
+        # Remove prefix filters (best rated, budget, etc.) using word boundaries
         for prefix in QueryRefiner.PREFIX_FILTERS:
-            if query_lower.startswith(prefix + " "):
-                # Remove the prefix and the space
-                query = query[len(prefix) :].strip()
-                query_lower = query.lower()
-                break
+            # Use word boundary to ensure we match complete words
+            pattern = re.compile(rf"^{re.escape(prefix)}\s+", re.IGNORECASE)
+            query = pattern.sub("", query)
+            query_lower = query.lower()
 
         # Handle multi-topic queries by taking only the first topic
         for separator in QueryRefiner.MULTI_TOPIC_SEPARATORS:
@@ -124,41 +168,21 @@ class QueryRefiner:
                 query_lower = query.lower()
                 break
 
-        # Handle "with" separator - split if it's followed by common accessories/filters
+        # Handle "with" separator - split if followed by common accessories/filters
         if " with " in query_lower:
             parts = query.split(" with ", 1)
             if len(parts) == 2:
-                second_part = parts[1].lower()
-                # Check if second part looks like an accessory, filter, or spec
-                if any(
-                    word in second_part
-                    for word in [
-                        "case",
-                        "cover",
-                        "charger",
-                        "cable",
-                        "adapter",
-                        "memory",
-                        "storage",
-                        "ram",
-                        "gb",
-                        "tb",
-                        "shipping",
-                        "delivery",
-                        "prime",
-                        "free",
-                        "discount",
-                        "rgb",
-                    ]
-                ):
+                second_part = parts[1]
+                # Use compiled pattern with word boundaries for matching
+                pattern = QueryRefiner._get_with_keywords_pattern()
+                if pattern.search(second_part):
                     query = parts[0].strip()
                     query_lower = query.lower()
 
-        # Remove filter keywords and everything after them
-        for filter_keyword in QueryRefiner.FILTER_KEYWORDS:
-            pattern = re.compile(rf"\s+{re.escape(filter_keyword)}\b.*", re.IGNORECASE)
+        # Remove filter keywords and everything after them using pre-compiled patterns
+        filter_patterns = QueryRefiner._get_filter_patterns()
+        for pattern in filter_patterns:
             query = pattern.sub("", query)
-            query_lower = query.lower()
 
         # Clean up whitespace
         query = " ".join(query.split())
@@ -231,4 +255,5 @@ class QueryRefiner:
             }
 
         return {"is_valid": True, "reason": "Query is valid", "refined_query": refined}
+
 

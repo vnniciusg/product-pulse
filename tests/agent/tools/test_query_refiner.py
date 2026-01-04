@@ -8,16 +8,22 @@ Tests validate that search queries are properly refined to be:
 """
 
 import sys
-import importlib.util
+from pathlib import Path
 
 import pytest
 
-# Import query_refiner directly to avoid importing langchain dependencies
-spec = importlib.util.spec_from_file_location(
-    "query_refiner", "src/agent/tools/query_refiner.py"
-)
+# Import the module directly without going through agent package
+# This avoids importing langchain dependencies that are not needed for testing
+project_root = Path(__file__).parent.parent.parent.parent
+query_refiner_path = project_root / "src" / "agent" / "tools" / "query_refiner.py"
+
+# Load the module
+import importlib.util
+spec = importlib.util.spec_from_file_location("query_refiner", query_refiner_path)
 query_refiner_module = importlib.util.module_from_spec(spec)
+sys.modules["query_refiner"] = query_refiner_module
 spec.loader.exec_module(query_refiner_module)
+
 QueryRefiner = query_refiner_module.QueryRefiner
 
 

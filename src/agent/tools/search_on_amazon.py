@@ -15,12 +15,20 @@ async def search_on_amazon(
     Search for products on Amazon that match a given query and return enriched product data.
 
     What's happening:
-    1. Opens an asynchronous ScraperAPIService session with limited concurrency.
-    2. Searches Amazon for products matching the provided query.
-    3. Keeps only the top N products from the search results.
-    4. Fetches detailed information for each selected product.
-    5. Converts product objects into a chatbot-friendly representation.
-    6. Returns a structured response indicating success or failure.
+    1. Validates and refines the search query to ensure it's single-topic and Amazon-appropriate.
+    2. Opens an asynchronous ScraperAPIService session with limited concurrency.
+    3. Searches Amazon for products matching the refined query.
+    4. Keeps only the top N products from the search results.
+    5. Fetches detailed information for each selected product.
+    6. Converts product objects into a chatbot-friendly representation.
+    7. Returns a structured response indicating success or failure.
+
+    Query Refinement:
+    - Removes price filters (e.g., "under $100")
+    - Removes shipping filters (e.g., "with prime")
+    - Removes rating filters (e.g., "best rated", "5 stars")
+    - Reduces multi-topic queries to single topic (e.g., "laptop and mouse" → "laptop")
+    - Strips unnecessary qualifiers (e.g., "budget laptop" → "laptop")
 
     When to call:
     - When a user asks to find or compare products on Amazon.
@@ -29,7 +37,11 @@ async def search_on_amazon(
 
     Args:
     query : str
-        The search query to use on Amazon (e.g., product name, category, or keywords).
+        The search query to use on Amazon. Can be a natural language query - it will be
+        automatically refined to a focused product name or category. Examples:
+        - "wireless headphones" (already good)
+        - "laptop under $500" (will be refined to "laptop")
+        - "Nintendo Switch with prime shipping" (will be refined to "Nintendo Switch")
     top_n_products : int, optional
         The number of top products to return from the search results (default is 5).
 
