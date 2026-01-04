@@ -67,13 +67,16 @@ class ScraperAPIService:
         )
         self._semaphore = asyncio.Semaphore(max_concurrent_requests)
 
-    async def search_product_on_amazon(self, *, query: str) -> AmazonSearchResult:
+    async def search_product_on_amazon(
+        self, *, query: str, region: str | None = None
+    ) -> AmazonSearchResult:
         async with self._http_client as client:
             response = await client.get(
                 "/search/v1",
                 params={
                     "api_key": app_config.SCRAPER.KEY.get_secret_value(),
                     "query": query,
+                    "country_code": region or app_config.SCRAPER.COUNTRY_CODE,
                 },
             )
             data = response.json()

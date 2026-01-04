@@ -13,7 +13,9 @@ async def stream_generator(request: ChatRequest):
         config = {"configurable": {"thread_id": request.thread_id}}
 
         async for chunk in agent.astream(
-            {"messages": messages}, config=config, stream_mode=request.stream_mode
+            {"messages": messages, "region": request.region},
+            config=config,
+            stream_mode=request.stream_mode,
         ):
             latest_message = chunk["messages"][-1]
 

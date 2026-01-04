@@ -1,13 +1,15 @@
 from typing import Any
 
-from langchain.tools import tool
+from langchain.tools import ToolRuntime, tool
 from loguru import logger
 
 from ...services.scraperapi_service import ScraperAPIService
 
 
 @tool
-async def search_on_amazon(query: str, top_n_products: int = 5) -> dict[str, Any]:
+async def search_on_amazon(
+    runtime: ToolRuntime, query: str, top_n_products: int = 5
+) -> dict[str, Any]:
     """
     Search for products on Amazon that match a given query and return enriched product data.
 
@@ -48,7 +50,9 @@ async def search_on_amazon(query: str, top_n_products: int = 5) -> dict[str, Any
     """
     try:
         async with ScraperAPIService(max_concurrent_requests=5) as scraper_api:
-            products = await scraper_api.search_product_on_amazon(query=query)
+            products = await scraper_api.search_product_on_amazon(
+                query=query, region=runtime.state.get("region")
+            )
             products = products.top_n_products_only(n=top_n_products)
             products = await scraper_api.get_products_details(search_results=products)
             products = [product.to_chatbot_view() for product in products]

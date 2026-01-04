@@ -10,6 +10,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message]
+    region: str | None = Field(default=None)
     thread_id: str | None = Field(default="default")
     stream_mode: str | None = Field(default="values")
 
