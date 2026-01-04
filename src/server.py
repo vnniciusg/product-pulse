@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -6,6 +7,8 @@ from .api.core.models import ChatRequest
 from .api.middleware.bearer_auth_middleware import BearerAuthMiddleware
 from .api.services.stream_generator import stream_generator
 from .core.config import app_config
+
+load_dotenv()
 
 app = FastAPI(
     title=app_config.SERVER.TITLE,
