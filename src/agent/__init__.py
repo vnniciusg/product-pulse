@@ -17,7 +17,7 @@ agent = create_agent(
     state_schema=State,
     checkpointer=InMemorySaver(),
     middleware=[
-        ToolCallLimitMiddleware(tool_name="search_on_amazon", run_limit=4),
+        ToolCallLimitMiddleware(tool_name="search_on_amazon", run_limit=3),
         SummarizationMiddleware(
             model="google_genai:gemini-3-flash-preview", trigger=("tokens", 2048)
         ),
