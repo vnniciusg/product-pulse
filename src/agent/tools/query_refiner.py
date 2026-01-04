@@ -255,5 +255,3 @@ class QueryRefiner:
             }
 
         return {"is_valid": True, "reason": "Query is valid", "refined_query": refined}
-
-

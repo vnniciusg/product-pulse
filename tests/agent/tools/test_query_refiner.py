@@ -7,6 +7,7 @@ Tests validate that search queries are properly refined to be:
 3. Free of unnecessary filters (price, shipping, ratings)
 """
 
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -18,7 +19,6 @@ project_root = Path(__file__).parent.parent.parent.parent
 query_refiner_path = project_root / "src" / "agent" / "tools" / "query_refiner.py"
 
 # Load the module
-import importlib.util
 spec = importlib.util.spec_from_file_location("query_refiner", query_refiner_path)
 query_refiner_module = importlib.util.module_from_spec(spec)
 sys.modules["query_refiner"] = query_refiner_module
