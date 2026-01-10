@@ -11,7 +11,7 @@ from .tools.search_on_amazon import search_on_amazon
 load_dotenv()
 
 agent = create_agent(
-    model=init_chat_model("google_genai:gemini-3-flash-preview"),
+    model=init_chat_model("gpt-5.2"),
     system_prompt=SYSTEM_PROMPT,
     tools=[search_on_amazon],
     state_schema=State,
@@ -19,7 +19,7 @@ agent = create_agent(
     middleware=[
         ToolCallLimitMiddleware(tool_name="search_on_amazon", run_limit=3),
         SummarizationMiddleware(
-            model="google_genai:gemini-3-flash-preview", trigger=("tokens", 2048)
+            model="gpt-5-mini", trigger=("tokens", 2048)
         ),
     ],
 )

@@ -13,7 +13,9 @@ from tenacity import (
 from ..core.config import app_config
 from ..core.models.amazon_product_details import AmazonProductDetails
 from ..core.models.amazon_search_result import AmazonSearchResult, SearchProduct
+from ..decorators import with_semaphore, with_timer
 
+_semaphore = asyncio.Semaphore(3)
 
 class _HttpxClient:
     __slots__ = ("_base_url", "_timeout", "_client", "_limits")
@@ -66,16 +68,15 @@ class _RateLimitError(Exception): ...
 
 
 class ScraperAPIService:
-    __slots__ = ("_http_client", "_semaphore")
+    __slots__ = ("_http_client")
 
-    def __init__(self, *, max_concurrent_requests: int = 10) -> None:
+    def __init__(self) -> None:
         self._http_client = _HttpxClient(
             base_url="https://api.scraperapi.com/structured/amazon",
             timeout=30.0,
             max_connections=50,
             max_keepalive_connections=10,
         )
-        self._semaphore = asyncio.Semaphore(max_concurrent_requests)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -83,6 +84,7 @@ class ScraperAPIService:
         retry=retry_if_exception_type(_RateLimitError),
         before_sleep=before_sleep_log(logger, "WARNING"),
     )
+    @with_timer
     async def search_product_on_amazon(
         self, *, query: str, region: str | None = None
     ) -> AmazonSearchResult:
@@ -110,21 +112,22 @@ class ScraperAPIService:
                     raise _RateLimitError(f"Rate limit exceeded: {e.response.text}")
 
                 raise
-
+    
+    @with_timer
     async def get_products_details(
         self, search_results: list[SearchProduct]
     ) -> list[AmazonProductDetails]:
         async with self._http_client as client:
-            asins = [result.asin for result in search_results]
+            asin_to_url = {result.asin: str(result.url) for result in search_results}
             results = await asyncio.gather(
                 *[
-                    self._get_product_details(asin=asin, client=client)
-                    for asin in asins
+                    self._get_product_details(asin=asin, url=url, client=client)
+                    for asin, url in asin_to_url.items()
                 ],
                 return_exceptions=True,
             )
 
-            return [result for result in results if result is not None]
+            return [result for result in results if isinstance(result, AmazonProductDetails)]
 
     @retry(
         stop=stop_after_attempt(3),
@@ -132,36 +135,39 @@ class ScraperAPIService:
         retry=retry_if_exception_type((_RateLimitError, RequestError)),
         before_sleep=before_sleep_log(logger, "WARNING"),
     )
+    @with_timer
+    @with_semaphore(semaphore=_semaphore)
     async def _get_product_details(
-        self, *, asin: str, client: AsyncClient
+        self, *, asin: str, url: str, client: AsyncClient
     ) -> AmazonProductDetails | None:
-        async with self._semaphore:
-            try:
-                response = await client.get(
-                    "/product/v1",
-                    params={
-                        "api_key": app_config.SCRAPER.KEY.get_secret_value(),
-                        "asin": asin,
-                    },
+        try:
+            response = await client.get(
+                "/product/v1",
+                params={
+                    "api_key": app_config.SCRAPER.KEY.get_secret_value(),
+                    "asin": asin,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            data["url"] = url
+            return AmazonProductDetails(**data)
+
+        except HTTPStatusError as e:
+            if e.response.status_code == 429:
+                logger.warning(f"Rate limit hit for ASIN {asin}, retrying...")
+                raise _RateLimitError(
+                    f"Rate limit exceeded for ASIN {asin}: {e.response.text}"
                 )
-                response.raise_for_status()
-                return AmazonProductDetails(**response.json())
 
-            except HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    logger.warning(f"Rate limit hit for ASIN {asin}, retrying...")
-                    raise _RateLimitError(
-                        f"Rate limit exceeded for ASIN {asin}: {e.response.text}"
-                    )
+            logger.error(
+                f"HTTP error for ASIN {asin}: {e.response.status_code} - {e.response.text}"
+            )
+            raise
 
-                logger.error(
-                    f"HTTP error for ASIN {asin}: {e.response.status_code} - {e.response.text}"
-                )
-                raise
-
-            except RequestError as e:
-                logger.warning(f"Request error for ASIN {asin}, retrying: {str(e)}")
-                raise
+        except RequestError as e:
+            logger.warning(f"Request error for ASIN {asin}, retrying: {str(e)}")
+            raise
 
     async def close(self):
         await self._http_client.close()

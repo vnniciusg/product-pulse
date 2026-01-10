@@ -1,75 +1,98 @@
+import asyncio
+import json
 from typing import Any
 
+from langchain_core.messages import ToolMessage
 from langchain.tools import ToolRuntime, tool
+from langgraph.types import Command
 from loguru import logger
 
 from ...services.scraperapi_service import ScraperAPIService
+from ...decorators import with_timer, with_semaphore
 
 
 @tool
+@with_timer
+@with_semaphore(semaphore=asyncio.Semaphore(3))
 async def search_on_amazon(
-    runtime: ToolRuntime, query: str, top_n_products: int = 5
-) -> dict[str, Any]:
+    runtime: ToolRuntime,
+    query: str,
+    top_n_products: int = 5,
+    min_rating: float | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    prime_only: bool = False,
+    best_sellers_only: bool = False,
+) -> Command:
     """
-    Search for products on Amazon that match a given query and return enriched product data.
-
-    What's happening:
-    1. Opens an asynchronous ScraperAPIService session with limited concurrency.
-    2. Searches Amazon for products matching the provided query.
-    3. Keeps only the top N products from the search results.
-    4. Fetches detailed information for each selected product.
-    5. Converts product objects into a chatbot-friendly representation.
-    6. Returns a structured response indicating success or failure.
-
-    When to call:
-    - When a user asks to find or compare products on Amazon.
-    - When product discovery is required based on a natural language query.
-    - When up-to-date product listings and details are needed for recommendations.
+    Search for products on Amazon and return enriched product data with optional filters.
 
     Args:
-    query : str
-        The search query to use on Amazon (e.g., product name, category, or keywords).
-    top_n_products : int, optional
-        The number of top products to return from the search results (default is 5).
+        query: Short search query (2-5 words). Examples: "gaming mouse", "iPhone 15 case", "wireless headphones".
+        top_n_products: Number of top products to return (default 5).
+        min_rating: Minimum star rating filter (e.g., 4.0 or 4.5).
+        min_price: Minimum price in dollars.
+        max_price: Maximum price in dollars.
+        prime_only: If True, return only Prime-eligible products.
+        best_sellers_only: If True, return only best-seller products.
 
     Returns:
-    dict[str, Any]
-        On success:
-            {
-                "status": "success",
-                "last_search": list[dict],
-                "all_searches": list[list[dict]]
-            }
-            - "last_search" contains chatbot-friendly product representations.
-            - "all_searches" contains all preview searchs
-
-        On error:
-            {
-                "status": "error",
-                "error": str
-            }
-            - "error" contains a generic failure message.
+        dict with status, last_search results, and all_searches history.
     """
     try:
-        async with ScraperAPIService(max_concurrent_requests=3) as scraper_api:
-            products = await scraper_api.search_product_on_amazon(
+        async with ScraperAPIService() as scraper_api:
+            search_result = await scraper_api.search_product_on_amazon(
                 query=query, region=runtime.state.get("region")
             )
-            products = products.top_n_products_only(n=top_n_products)
-            products = await scraper_api.get_products_details(search_results=products)
+
+            products = search_result.results
+
+            if prime_only:
+                products = [p for p in products if p.has_prime]
+
+            if best_sellers_only:
+                products = [p for p in products if p.is_best_seller]
+
+            if min_rating is not None:
+                products = [p for p in products if p.stars and p.stars >= min_rating]
+
+            if min_price is not None or max_price is not None:
+                min_p = min_price if min_price is not None else 0
+                max_p = max_price if max_price is not None else float("inf")
+                products = [
+                    p for p in products if p.price and min_p <= p.price <= max_p
+                ]
+
+            products = products[:top_n_products]
+
             if not products:
-                return {"status": "success", "message": "Not found any product"}
+                return {"status": "success", "message": "No products found matching criteria"}
 
-            products = [product.to_chatbot_view() for product in products]
+            product_details = await scraper_api.get_products_details(search_results=products)
 
-        products_data = [product.model_dump() for product in products]
+            if not product_details:
+                return {"status": "success", "message": "No product details available"}
 
-        return {
-            "status": "success",
-            "last_search": products_data,
-            "all_searches": products_data,
-        }
+            chatbot_views = [product.to_chatbot_view() for product in product_details]
+
+        products_data = [view.model_dump() for view in chatbot_views]
+
+        return Command(
+            update={
+                "messages": [ToolMessage(
+                    content=json.dumps({
+                        "status": "success", 
+                        "last_search": products_data,
+                        "count": len(products_data)
+                    }),
+                    tool_call_id=runtime.tool_call_id,
+                    status="success"
+                )],
+                "last_search": products_data,
+            }
+        )
 
     except Exception as e:
-        logger.error(f"An error happend searching on amazon: {str(e)}")
-        return {"status": "error", "error": "An error happend searching on amazon"}
+        logger.error(f"Error searching on Amazon: {str(e)}")
+        return {"status": "error", "error": "An error occurred while searching on Amazon"}
+
