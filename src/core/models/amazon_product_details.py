@@ -29,6 +29,7 @@ class ChatbotProductView(BaseModel):
     customers_summary: str | None = Field(default=None)
     sentimental_details: dict[str, dict[str, int]] | None = Field(default_factory=dict)
     images: list[str] = Field(default_factory=list)
+    url: str | None = Field(default=None)
 
 
 class AmazonProductDetails(BaseModel):
@@ -40,6 +41,7 @@ class AmazonProductDetails(BaseModel):
     total_reviews: int | None = Field(default=None)
     images: list[str] = Field(default_factory=list)
     customers_say: CustomersSay | None = Field(default=None)
+    url: str | None = Field(default=None)
 
     def to_chatbot_view(
         self,
@@ -63,4 +65,5 @@ class AmazonProductDetails(BaseModel):
             else None,
             sentimental_details=sentimental_details,
             images=self.images[:3],
+            url=self.url,
         )
