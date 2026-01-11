@@ -13,7 +13,7 @@ from ...decorators import with_timer, with_semaphore
 
 @tool
 @with_timer
-@with_semaphore(semaphore=asyncio.Semaphore(3))
+@with_semaphore(semaphore=asyncio.Semaphore(2))
 async def search_on_amazon(
     runtime: ToolRuntime,
     query: str,

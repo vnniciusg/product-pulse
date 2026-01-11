@@ -17,7 +17,7 @@ agent = create_agent(
     state_schema=State,
     checkpointer=InMemorySaver(),
     middleware=[
-        ToolCallLimitMiddleware(tool_name="search_on_amazon", run_limit=3),
+        ToolCallLimitMiddleware(tool_name="search_on_amazon", run_limit=2),
         SummarizationMiddleware(
             model="gpt-5-mini", trigger=("tokens", 2048)
         ),
