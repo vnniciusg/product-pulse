@@ -16,11 +16,11 @@ export const ProductGrid: React.FC<{
         <div className="w-full space-y-3">
             <div className="flex items-center gap-2 px-2">
                 <ShoppingCart className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-semibold text-foreground">Produtos Encontrados</h3>
+                <h3 className="text-sm font-semibold text-foreground">Products Found</h3>
                 <span className="text-xs text-muted-foreground">({products.length})</span>
             </div>
 
-            <div className="w-full px-12">
+            <div className="w-full px-16">
                 <Carousel
                     opts={{
                         align: "start",
