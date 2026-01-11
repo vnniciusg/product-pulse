@@ -19,6 +19,9 @@ interface UseAgentStreamOptions {
 export const useAgentStream = (options: UseAgentStreamOptions) => {
   const streamResponse = useRef<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const optionsRef = useRef(options);
+
+  optionsRef.current = options;
 
   const stream = useCallback(
     async (messages: any[], region?: string) => {
@@ -56,23 +59,25 @@ export const useAgentStream = (options: UseAgentStreamOptions) => {
           throw new Error("No reader available");
         }
 
+        let buffer = "";
+
         while (true) {
           const { done, value } = await reader.read();
 
           if (done) {
-            options.onComplete?.();
             break;
           }
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+
+          buffer = lines.pop() || "";
 
           for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6);
+            if (line.trim().startsWith("data: ")) {
+              const data = line.trim().slice(6);
 
               if (data === "[DONE]") {
-                options.onComplete?.();
                 continue;
               }
 
@@ -81,23 +86,46 @@ export const useAgentStream = (options: UseAgentStreamOptions) => {
 
                 if (parsed.type === "token" && parsed.delta) {
                   streamResponse.current += parsed.delta;
-                  options.onToken?.(parsed.delta);
+                  optionsRef.current.onToken?.(parsed.delta);
                 } else if (parsed.type === "final_state" && parsed.state) {
-                  options.onFinalState?.(parsed.state);
+                  optionsRef.current.onFinalState?.(parsed.state);
                 } else if (parsed.type === "error") {
-                  options.onError?.(parsed.error || "Unknown error");
+                  optionsRef.current.onError?.(parsed.error || "Unknown error");
                 }
-              } catch (e) {}
+              } catch (e) {
+                console.error("Error parsing stream event:", e, data);
+              }
             }
           }
         }
+
+        if (buffer.trim().startsWith("data: ")) {
+          const data = buffer.trim().slice(6);
+          if (data !== "[DONE]") {
+            try {
+              const parsed: StreamEvent = JSON.parse(data);
+              if (parsed.type === "token" && parsed.delta) {
+                streamResponse.current += parsed.delta;
+                optionsRef.current.onToken?.(parsed.delta);
+              } else if (parsed.type === "final_state" && parsed.state) {
+                optionsRef.current.onFinalState?.(parsed.state);
+              }
+            } catch (e) { }
+          }
+        }
+
+        optionsRef.current.onComplete?.();
       } catch (error: any) {
         if (error.name !== "AbortError") {
-          options.onError?.(error.message || "Stream error");
+          optionsRef.current.onError?.(error.message || "Stream error");
+        }
+      } finally {
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
         }
       }
     },
-    [options]
+    []
   );
 
   const stop = useCallback(() => {
