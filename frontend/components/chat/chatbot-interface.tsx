@@ -1,87 +1,25 @@
 "use client";
 
-import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
+import { Conversation, ConversationContent, ConversationEmptyState, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { PromptInput, PromptInputBody, PromptInputFooter, PromptInputSubmit, PromptInputTextarea } from "@/components/ai-elements/prompt-input";
+import { Shimmer } from "@/components/ai-elements/shimmer";
 import { ModeToggle } from "@/components/mode-toggle";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { Message as MessageType, Product } from "@/types";
-import { GlobeIcon } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ProductGrid } from "./product-grid";
 
-
-const mockProducts: Product[] = [
-  {
-    name: "Smartphone Galaxy S23",
-    brand: "Samsung",
-    price: "R$ 4.599,00",
-    availability: "Em estoque",
-    average_rating: 4.7,
-    total_reviews: 1289,
-    images: [
-      "https://example.com/images/galaxy-s23-front.jpg",
-      "https://example.com/images/galaxy-s23-back.jpg"
-    ],
-    url: "https://example.com/produtos/samsung-galaxy-s23"
-  },
-  {
-    name: "iPhone 15",
-    brand: "Apple",
-    price: "R$ 6.999,00",
-    availability: "Pré-venda",
-    average_rating: 4.8,
-    total_reviews: 980,
-    images: [
-      "https://example.com/images/iphone-15.jpg"
-    ],
-    url: "https://example.com/produtos/iphone-15"
-  },
-  {
-    name: "Notebook Inspiron 15",
-    brand: "Dell",
-    price: "R$ 3.899,00",
-    availability: "Em estoque",
-    average_rating: 4.5,
-    total_reviews: 540,
-    images: [
-      "https://example.com/images/inspiron-15.jpg"
-    ],
-    url: "https://example.com/produtos/dell-inspiron-15"
-  },
-  {
-    name: "Fone de Ouvido WH-1000XM5",
-    brand: "Sony",
-    price: "R$ 2.299,00",
-    availability: "Poucas unidades",
-    average_rating: 4.9,
-    total_reviews: 2100,
-    images: [
-      "https://example.com/images/sony-wh1000xm5.jpg"
-    ],
-    url: "https://example.com/produtos/sony-wh-1000xm5"
-  },
-  {
-    name: "Smart TV 55\" 4K UHD",
-    brand: "LG",
-    price: "R$ 2.799,00",
-    availability: "Em estoque",
-    average_rating: 4.6,
-    total_reviews: 760,
-    images: [
-      "https://example.com/images/lg-tv-55.jpg"
-    ],
-    url: "https://example.com/produtos/lg-smart-tv-55-4k"
-  }
-];
 
 export const ChatbotInterface = () => {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const [lastSearch, setLastSearch] = useState<Product[] | null>(mockProducts);
+  const [lastSearch, setLastSearch] = useState<Product[] | null>(null);
   const streamingTextRef = useRef("");
+  const lastSearchRef = useRef<Product[] | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -92,25 +30,31 @@ export const ChatbotInterface = () => {
     },
     onFinalState: (state) => {
       if (state.last_search && Array.isArray(state.last_search)) {
+        lastSearchRef.current = state.last_search;
         setLastSearch(state.last_search);
       }
     },
     onComplete: () => {
-      if (streamingTextRef.current) {
+      const finalContent = streamingTextRef.current;
+      const finalProducts = lastSearchRef.current;
+
+      if (finalContent) {
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content: streamingTextRef.current,
+            content: finalContent,
             timestamp: new Date(),
-            products: lastSearch || undefined,
+            products: finalProducts || undefined,
           },
         ]);
       }
+
       setStreamingText("");
       streamingTextRef.current = "";
       setIsStreaming(false);
       setLastSearch(null);
+      lastSearchRef.current = null;
     },
     onError: () => {
       setIsStreaming(false);
@@ -149,6 +93,7 @@ export const ChatbotInterface = () => {
     setInput("");
     setIsStreaming(true);
     streamingTextRef.current = "";
+    lastSearchRef.current = null;
 
     await stream(
       [...messages, userMessage].map((m) => ({
@@ -160,28 +105,23 @@ export const ChatbotInterface = () => {
   };
 
   return (
-    <div className="flex h-screen w-full bg-gradient-to-br from-background via-background to-accent/5">
+    <div className="flex h-screen w-full bg-background text-foreground">
       <div className="flex flex-col h-full w-full">
-        <header className="border-b border-border/40 bg-card/30 backdrop-blur-xl shrink-0">
-          <div className="container max-w-4xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-primary/60">
-                  <GlobeIcon className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold">Product Pulse</h1>
-                </div>
-              </div>
-              <ModeToggle />
-            </div>
-          </div>
+        <header className="shrink-0 flex justify-end mx-8 my-4">
+          <ModeToggle />
         </header>
 
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 max-w-4xl mx-auto w-full flex flex-col min-h-0">
+          <div className="flex-1 max-w-6xl mx-auto w-full flex flex-col min-h-0">
             <Conversation>
               <ConversationContent>
+                {messages.length === 0 && (
+                  <ConversationEmptyState
+                    icon={<MessageSquare className="size-10" />}
+                    title="Product Pulse AI"
+                    description="Search for similar products, compare prices, and get personalized recommendations."
+                  />
+                )}
                 {messages.map((message) => (
                   <Message from={message.role} key={message.timestamp.toISOString()}>
                     <MessageContent>
@@ -196,6 +136,13 @@ export const ChatbotInterface = () => {
                     </MessageContent>
                   </Message>
                 ))}
+                {isStreaming && !streamingText && (
+                  <Message from="assistant">
+                    <MessageContent>
+                      <Shimmer>The agent is thinking...</Shimmer>
+                    </MessageContent>
+                  </Message>
+                )}
                 {isStreaming && streamingText && (
                   <Message from="assistant">
                     <MessageContent>
@@ -211,8 +158,8 @@ export const ChatbotInterface = () => {
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-border/40 bg-card/30 backdrop-blur-xl">
-          <div className="p-4 max-w-4xl mx-auto w-full">
+        <div className="shrink-0">
+          <div className="p-8 max-w-5xl mx-auto w-full">
             <PromptInput onSubmit={handleSubmit} className="w-full">
               <PromptInputBody>
                 <PromptInputTextarea
